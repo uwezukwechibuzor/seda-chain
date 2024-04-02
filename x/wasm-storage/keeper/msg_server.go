@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 
+	errorsmod "cosmossdk.io/errors"
 	"github.com/CosmWasm/wasmd/x/wasm/ioutils"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
@@ -65,7 +65,7 @@ func (m msgServer) StoreDataRequestWasm(goCtx context.Context, msg *types.MsgSto
 	}
 	wasm := types.NewWasm(unzipped, msg.WasmType, ctx.BlockTime())
 	if m.Keeper.HasDataRequestWasm(ctx, wasm) {
-		return nil, fmt.Errorf("data Request Wasm with given hash already exists")
+		return nil, errorsmod.Wrap(types.ErrDataRequestWasmExists, string(wasm.Hash))
 	}
 	m.Keeper.SetDataRequestWasm(ctx, wasm)
 
@@ -96,7 +96,7 @@ func (m msgServer) StoreOverlayWasm(goCtx context.Context, msg *types.MsgStoreOv
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
 	if msg.Sender != m.authority {
-		return nil, fmt.Errorf("invalid authority %s", msg.Sender)
+		return nil, errorsmod.Wrap(types.ErrInvalidAuthority, msg.Sender)
 	}
 
 	unzipped, err := unzipWasm(msg.Wasm)
@@ -105,7 +105,7 @@ func (m msgServer) StoreOverlayWasm(goCtx context.Context, msg *types.MsgStoreOv
 	}
 	wasm := types.NewWasm(unzipped, msg.WasmType, ctx.BlockTime())
 	if m.Keeper.HasOverlayWasm(ctx, wasm) {
-		return nil, fmt.Errorf("overlay Wasm with given hash already exists")
+		return nil, errorsmod.Wrap(types.ErrOverlayWasmExists, string(wasm.Hash))
 	}
 	m.Keeper.SetOverlayWasm(ctx, wasm)
 
@@ -138,18 +138,18 @@ func (m msgServer) InstantiateAndRegisterProxyContract(goCtx context.Context, ms
 
 	senderAddr, err := sdk.AccAddressFromBech32(msg.Sender)
 	if err != nil {
-		return nil, fmt.Errorf("invalid sender address: %s", err)
+		return nil, errorsmod.Wrap(types.ErrInvalidSenderAddress, msg.Sender)
 	}
 	var adminAddr sdk.AccAddress
 	if msg.Admin != "" {
 		if adminAddr, err = sdk.AccAddressFromBech32(msg.Admin); err != nil {
-			return nil, fmt.Errorf("invalid admin address: %s", err)
+			return nil, errorsmod.Wrap(types.ErrInvalidAdminAddress, msg.Admin)
 		}
 	}
 
 	contractAddr, _, err := m.wasmKeeper.Instantiate2(ctx, msg.CodeID, senderAddr, adminAddr, msg.Msg, msg.Label, msg.Funds, msg.Salt, msg.FixMsg)
 	if err != nil {
-		return nil, err
+		return nil, errorsmod.Wrap(types.ErrInstantiateContract, contractAddr.String())
 	}
 
 	// update Proxy Contract registry
@@ -165,7 +165,7 @@ func unzipWasm(wasm []byte) ([]byte, error) {
 	var unzipped []byte
 	var err error
 	if !ioutils.IsGzip(wasm) {
-		return nil, fmt.Errorf("wasm is not gzip compressed")
+		return nil, errorsmod.Wrap(types.ErrWasmNotGzipCompressed, string(wasm))
 	}
 	unzipped, err = ioutils.Uncompress(wasm, types.MaxWasmSize)
 	if err != nil {
@@ -177,11 +177,11 @@ func unzipWasm(wasm []byte) ([]byte, error) {
 func (m msgServer) UpdateParams(goCtx context.Context, req *types.MsgUpdateParams) (*types.MsgUpdateParamsResponse, error) {
 	// validate authority
 	if _, err := sdk.AccAddressFromBech32(req.Authority); err != nil {
-		return nil, fmt.Errorf("invalid authority address: %s", err)
+		return nil, errorsmod.Wrap(types.ErrInvalidAuthorityAddress, req.Authority)
 	}
 
 	if m.GetAuthority() != req.Authority {
-		return nil, fmt.Errorf("invalid authority; expected %s, got %s", m.GetAuthority(), req.Authority)
+		return nil, errorsmod.Wrapf(types.ErrInvalidAuthority, "invalid authority; expected %s, got %s", m.GetAuthority(), req.Authority)
 	}
 
 	// validate params
